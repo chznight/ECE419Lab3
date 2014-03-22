@@ -208,6 +208,10 @@ Mazewar.class : MazewarServerSendThread.java
 Mazewar.class : MazewarServerSendThread.class
 Mazewar.class : MazewarServerReceiveThread.java
 Mazewar.class : MazewarServerReceiveThread.class
+Mazewar.class : NamingService.java
+Mazewar.class : NamingService.class
+Mazewar.class : NamingServiceHandlerThread.java
+Mazewar.class : NamingServiceHandlerThread.class
 OverheadMazePanel.class : OverheadMazePanel.java
 OverheadMazePanel.class : RobotClient.java
 OverheadMazePanel.class : RobotClient.class

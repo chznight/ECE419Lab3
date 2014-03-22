@@ -39,15 +39,15 @@ public class NamingServiceHandlerThread extends Thread {
 						if("".equals(clientLookupTable[i].client_name)){ /*found empty slot*/
 							clientLookupTable[i].client_name = packetFromClient.name; /*store name into table*/
 							clientLookupTable[i].client_id = i;
-							clientLookupTable[i].client_location = new ClientLocation (packetFromClient.locations[0].host, packetFromClient.locations[0].port); /*store location into table*/
+							clientLookupTable[i].client_location = new ClientLocation (packetFromClient.locations[0].client_host, packetFromClient.locations[0].client_port); /*store location into table*/
 							packetToClient.type = MazewarPacket.LOOKUP_REPLY;
 							toClient.writeObject(packetToClient);
 							flag=true;
 							break;
 						}
 						if(clientLookupTable[i].client_name==packetFromClient.name){/*name already exists, register using new location*/ 
-							clientLookupTable[i].client_location = new ClientLocation (packetFromClient.locations[0].host, packetFromClient.locations[0].port);
-							client_id = i;
+							clientLookupTable[i].client_location = new ClientLocation (packetFromClient.locations[0].client_host, packetFromClient.locations[0].client_port);
+							clientLookupTable[i].client_id = i; /*FIXED*/
 							packetToClient.type = MazewarPacket.LOOKUP_REPLY;
 							toClient.writeObject(packetToClient);
 							flag=true;
@@ -93,7 +93,7 @@ public class NamingServiceHandlerThread extends Thread {
 					for(int i=0;i<num_of_players;i++){
 						if(packetFromClient.name.equals(clientLookupTable[i].client_name)){ /*if none empty spot*/
 							clientLookupTable[i].client_name = "";
-							clientLookupTable.client_location = null;
+							clientLookupTable[i].client_location = null; /*FIXED*/
 						}
 					}
 					packetToClient = new MazewarPacket();
