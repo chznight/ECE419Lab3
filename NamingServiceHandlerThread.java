@@ -89,20 +89,17 @@ public class NamingServiceHandlerThread extends Thread {
 					continue;
 				}
 
-				if(packetFromClient.type == MazewarPacket.LOOKUP_QUIT) {
-
-					System.out.println("You are in quit");
+				if(packetFromClient.type == MazewarPacket.LOOKUP_UNREGISTER) {
+					//unregister
+					System.out.println("Unregistering client " + packetFromClient.name);
 					for(int i=0;i<num_of_players;i++){
-						if(clientLookupTable[i].client_name.equals(packetFromClient.name)){ /*if none empty spot*/
-							clientLookupTable[i].client_name = "";
+						if(clientLookupTable[i].client_name.equals(packetFromClient.name)){ 
+							clientLookupTable[i].client_name = ""; //change to empty string
 							clientLookupTable[i].client_location = null; /*FIXED*/
 							break;
 						}
 					}
-					packetToClient = new MazewarPacket();
-					packetToClient.type = MazewarPacket.LOOKUP_REPLY;
-					toClient.writeObject(packetToClient);
-					continue;
+					break;
 				}
 				
 				/* Sending an ECHO_NULL || ECHO_BYE means quit */

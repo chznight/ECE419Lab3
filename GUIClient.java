@@ -33,10 +33,11 @@ import java.util.concurrent.*;
  * @version $Id: GUIClient.java 343 2004-01-24 03:43:45Z geoffw $
  */
 
-public class GUIClient extends LocalClient implements KeyListener, Runnable{
+public class GUIClient extends LocalClient implements KeyListener, Runnable {
 
-        private ObjectOutputStream out;
+        private ObjectOutputStream [] out;
         private String name;
+        private int num_players;
 
         private final Thread thread;
         /** 
@@ -48,85 +49,91 @@ public class GUIClient extends LocalClient implements KeyListener, Runnable{
         /**
          * Create a GUI controlled {@link LocalClient}.  
          */
-        public GUIClient(String name_, ObjectOutputStream out_, BlockingQueue<MazewarPacket> clientCommandQueue_) {
+        public GUIClient(String name_, ObjectOutputStream [] out_, BlockingQueue<MazewarPacket> clientCommandQueue_, int num_players_) {
                 super(name_);
                 name = name_;
+                num_players = num_players_;
                 out = out_;
                 clientCommandQueue = clientCommandQueue_;
                 thread = new Thread(this);
         }
         
-
+        public void multicastPacket (MazewarPacket packetToOthers) throws IOException {
+            int i = 0;
+            try {
+                for (i=0; i<num_players; i++) {
+                    if (out[i] != null)
+                        out[i].writeObject(packetToOthers);
+                }                        
+            } catch (IOException e) {
+                            
+            }
+        }
 
         /**
          * Handle a key press.
          * @param e The {@link KeyEvent} that occurred.
          */
         public void keyPressed(KeyEvent e) {
-                MazewarPacket packetToServer = new MazewarPacket();
-                packetToServer.name = name;
+                MazewarPacket packetToOthers = new MazewarPacket();
+                packetToOthers.name = name;
                 // If the user pressed Q, invoke the cleanup code and quit. 
                 if((e.getKeyChar() == 'q') || (e.getKeyChar() == 'Q')) {
-                        packetToServer.type = MazewarPacket.MAZEWAR_BYE;
-                        try {
-                                out.writeObject(packetToServer);
-                        } catch (IOException e2) {
-                                System.err.println("ERROR: Couldn't get I/O for the connection.");
-                                System.exit(1);
-                        }
+                        packetToOthers.type = MazewarPacket.MAZEWAR_BYE;
+                        //try {
+                        // //   multicastPacket (packetToOthers);
+                        //} catch (IOException e2) {
+                            
+                        //}
+                        //Mazewar.unregisterClient (name);
                         Mazewar.quit();
                 // Up-arrow moves forward.
                 } else if(e.getKeyCode() == KeyEvent.VK_UP) {
-                        packetToServer.type = MazewarPacket.MAZEWAR_REQ;
-                        packetToServer.command = MazewarPacket.MAZEWAR_MOVEFORWARD;
+                        packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
+                        packetToOthers.command = MazewarPacket.MAZEWAR_MOVEFORWARD;
                         try {
-                                out.writeObject(packetToServer);
+                            multicastPacket (packetToOthers);
                         } catch (IOException e2) {
-                                System.err.println("ERROR: Couldn't get I/O for the connection.");
-                                System.exit(1);
+                            
                         }
                         //forward();
                 // Down-arrow moves backward.
                 } else if(e.getKeyCode() == KeyEvent.VK_DOWN) {
-                        packetToServer.type = MazewarPacket.MAZEWAR_REQ;
-                        packetToServer.command = MazewarPacket.MAZEWAR_MOVEBACKWARD;
+                        packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
+                        packetToOthers.command = MazewarPacket.MAZEWAR_MOVEBACKWARD;
                         try {
-                                out.writeObject(packetToServer);
+                            multicastPacket (packetToOthers);
                         } catch (IOException e2) {
-                                System.err.println("ERROR: Couldn't get I/O for the connection.");
-                                System.exit(1);
+                            
                         }
                         //backup();
                 // Left-arrow turns left.
                 } else if(e.getKeyCode() == KeyEvent.VK_LEFT) {
-                        packetToServer.type = MazewarPacket.MAZEWAR_REQ;
-                        packetToServer.command = MazewarPacket.MAZEWAR_ROTATELEFT;
+                        packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
+                        packetToOthers.command = MazewarPacket.MAZEWAR_ROTATELEFT;
                         try {
-                                out.writeObject(packetToServer);
+                            multicastPacket (packetToOthers);
                         } catch (IOException e2) {
-                                System.err.println("ERROR: Couldn't get I/O for the connection.");
-                                System.exit(1);
+                            
                         }
                         //turnLeft();
                 // Right-arrow turns right.
                 } else if(e.getKeyCode() == KeyEvent.VK_RIGHT) {
-                        packetToServer.type = MazewarPacket.MAZEWAR_REQ;
-                        packetToServer.command = MazewarPacket.MAZEWAR_ROTATERIGHT;
+                        packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
+                        packetToOthers.command = MazewarPacket.MAZEWAR_ROTATERIGHT;
                         try {
-                                out.writeObject(packetToServer);
+                            multicastPacket (packetToOthers);
                         } catch (IOException e2) {
-                                System.err.println("ERROR: Couldn't get I/O for the connection.");
-                                System.exit(1);
+                            
                         }
                 // Spacebar fires.
                 } else if(e.getKeyCode() == KeyEvent.VK_SPACE) {
-                        packetToServer.type = MazewarPacket.MAZEWAR_REQ;
-                        packetToServer.command = MazewarPacket.MAZEWAR_FIRE;
+                        packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
+                        packetToOthers.command = MazewarPacket.MAZEWAR_FIRE;
                         try {
-                                out.writeObject(packetToServer);
+                            multicastPacket (packetToOthers);
                         } catch (IOException e2) {
-                                System.err.println("ERROR: Couldn't get I/O for the connection.");
-                                System.exit(1);
+                            
                         }
                         //fire();
                 }
