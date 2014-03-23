@@ -44,12 +44,23 @@ public class Mazewar extends JFrame implements Runnable {
 
 
         private static Socket mazewarSocket = null;
+        private Socket lookupSocket = null;
+        public Socket [] outSockets;
+        public Socket [] inSockets;
+        public ServerSocket serverSocket = null;
+
         private static ObjectOutputStream out;
         private static ObjectInputStream in;
+        private static ObjectOutputStream [] out_to_clients;
+        private static ObjectInputStream [] in_from_clients;
+
         public BlockingQueue<MazewarPacket> clientCommandQueue;
         private String gui_player_name;
         private static String hostname;
         private static int port;
+        private static int myPort;
+        private static int num_players;
+
 
         private final Thread receive_thread;
 
@@ -141,7 +152,6 @@ public class Mazewar extends JFrame implements Runnable {
                 // Create the maze
                 maze = new MazeImpl(new Point(mazeWidth, mazeHeight), mazeSeed);
                 assert(maze != null);
-                
                 // Have the ScoreTableModel listen to the maze to find
                 // out how to adjust scores.
                 ScoreTableModel scoreModel = new ScoreTableModel();
@@ -159,38 +169,128 @@ public class Mazewar extends JFrame implements Runnable {
                 // You may want to put your network initialization code somewhere in
                 // here.
                 clientCommandQueue = new ArrayBlockingQueue<MazewarPacket>(1024);
-                
+
+                MazewarPacket packetToServer=new MazewarPacket();
+                MazewarPacket packetFromServer;
+
+                try {
+                    serverSocket = new ServerSocket(myPort);
+                } catch (IOException e) {
+                    System.err.println("ERROR: Couldn't get I/O for the connection.");
+                    System.err.println("ERROR: Mazewar");
+                    System.exit(1);
+                }
+                outSockets = new Socket[num_players];
+                inSockets = new Socket[num_players];
+                out_to_clients = new ObjectOutputStream[num_players];
+                in_from_clients = new ObjectInputStream[num_players];
+
+
+                receive_thread = new Thread(this);
+                receive_thread.start();
+
         		try {
-        			//Assume server runs at localhost:1111 by default
+        			//Assume naming service runs at localhost:1111 by default
 
-        			mazewarSocket = new Socket(hostname, port);
+        			lookupSocket = new Socket("localhost", 1111);
 
-        			out = new ObjectOutputStream(mazewarSocket.getOutputStream());
-        			in = new ObjectInputStream(mazewarSocket.getInputStream());
+        			out = new ObjectOutputStream(lookupSocket.getOutputStream());
+        			in = new ObjectInputStream(lookupSocket.getInputStream());
         			
-        			MazewarPacket packetToServer=new MazewarPacket();
-        			MazewarPacket packetFromServer;
-        			
-        			packetToServer.type=MazewarPacket.MAZEWAR_REG;
+        			//register with naming service
+        			packetToServer.type=MazewarPacket.LOOKUP_REGISTER;
         			packetToServer.name=name;
+                    packetToServer.locations = new ClientLocation[1];
+
+                    packetToServer.locations[0] = new ClientLocation (InetAddress.getLocalHost().getHostAddress(), myPort);
         			
         			out.writeObject(packetToServer);
         			
         			packetFromServer = (MazewarPacket) in.readObject();
-        			
-        			while (packetFromServer.type==MazewarPacket.MAZEWAR_ERROR){
-                        System.out.println("ERROR: name in use");
-                        name = JOptionPane.showInputDialog("Enter your name");
-				    if((name == null) || (name.length() == 0)) {
-				        Mazewar.quit();
-				    }
-				     packetToServer=new MazewarPacket();
-		   		     packetToServer.type=MazewarPacket.MAZEWAR_REG;
-		   		     packetToServer.name=name;
-		   			out.writeObject(packetToServer);
-		   			packetFromServer = (MazewarPacket) in.readObject();
-        			}
+                    if (packetFromServer.type==MazewarPacket.LOOKUP_REPLY){
+                        System.out.println("Registered");
+                    } else {
+                        System.out.println("I have problem, shutting down");
+                        Mazewar.quit();
+                    }
 
+                    //poll the naming service to see if number of players is ready
+                    packetToServer = new MazewarPacket();
+                    packetToServer.type = MazewarPacket.LOOKUP_REQUEST;
+                    out.writeObject(packetToServer);
+                    packetFromServer = (MazewarPacket) in.readObject();
+
+                    while (packetFromServer.type==MazewarPacket.LOOKUP_REPLY) {
+                        if (packetFromServer.num_locations < num_players) {
+                            packetToServer = new MazewarPacket();
+                            packetToServer.type = MazewarPacket.LOOKUP_REQUEST;
+                            out.writeObject(packetToServer);
+                            packetFromServer = (MazewarPacket) in.readObject();
+                            try {
+                                 Thread.sleep(500);
+                            } catch(InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        } else {
+                            System.out.println("number of players reached");
+                            break;
+                        }
+                    }
+
+                    
+                    //connect with other players
+                    for (int i = 0; i < num_players; i++) {
+                        outSockets[i] = new Socket (packetFromServer.locations[i].client_host, packetFromServer.locations[i].client_port);
+                    }
+
+                    //close naming service
+                    packetToServer = new MazewarPacket();
+                    packetToServer.type = MazewarPacket.MAZEWAR_BYE;
+                    out.writeObject(packetToServer);
+                    in.close();
+                    out.close();
+                    lookupSocket.close();
+
+
+                    //initialize input streams
+                    //there are 4 output streams and 4 input streams
+                    //output streams and input streams use different sockets
+                    //input streams are initialized at receive thread
+                    for (int i = 0; i < num_players; i++) {
+                        out_to_clients[i] = new ObjectOutputStream(outSockets[i].getOutputStream());
+                    }
+
+                    
+
+                    //-----------------------------
+                            try {
+                                 Thread.sleep(5000);
+                            } catch(InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                    //-----------------------------
+
+                    for (int i = 0; i < num_players; i++) {
+                        packetToServer = new MazewarPacket();
+                        packetToServer.type = MazewarPacket.MAZEWAR_INITIALIZE_PLAYERS;
+                        out_to_clients[i].writeObject (packetToServer);
+                    }
+
+                    //-----------------------------
+                            try {
+                                 Thread.sleep(10000);
+                            } catch(InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                    //-----------------------------
+                            Mazewar.quit();
+
+                    // HERE IS WHERE THE CODE ENDS!!! I WRITE UP TO HERE FOR NOW
+                    // CURRENTLY THE CODE CONNECTS WITH 2 PLAYERS ONLY
+                    // AFTER CONNECTION IT SENDS A MAZEWAR_INITIALIZE_PLAYERS PACKET AND QUITS
+                    // THaTS ALL
+                    // YOU SHOULD SEE THAT EACH CLIENT RECEIVES TWO MAZEWAR_INITIALIZE_PLAYERS PACKET
+                    // BECAUSE IT SENDS ONE TO ITSELF AS WELL
 
                     while( (packetFromServer=(MazewarPacket) in.readObject()) != null) {
                         if (packetFromServer.type == MazewarPacket.MAZEWAR_INITIALIZE_PLAYERS){
@@ -225,12 +325,6 @@ public class Mazewar extends JFrame implements Runnable {
                     		System.exit(1);
                 }
 
-
-                receive_thread = new Thread(this);
-                receive_thread.start();
-
-
-                
                 // Create the panel that will display the maze.
                 overheadPanel = new OverheadMazePanel(maze, guiClient);
                 assert(overheadPanel != null);
@@ -292,35 +386,60 @@ public class Mazewar extends JFrame implements Runnable {
 
         public void run() {
             MazewarPacket packetFromServer;
+
+
+
             while  (true) {
                 try {
-                    while( (packetFromServer=(MazewarPacket) in.readObject()) != null) {
-                        if (packetFromServer.type == MazewarPacket.MAZEWAR_REQ) {
-                            clientCommandQueue.put(packetFromServer);
-                            //System.out.println ("Received packet from server, added to queue");
-                        } 
-
+                    for (int i=0; i < num_players; i++) {
+                        try {
+                            inSockets[i] = serverSocket.accept();
+                        } catch (IOException e) {
+                            System.err.println("ERROR: Couldn't get I/O for the connection.");
+                            System.exit(1);
+                        }
                     }
+                    System.out.println ("players connected");
+
+                    for (int i=0; i < num_players; i++) {
+                        in_from_clients[i] = new ObjectInputStream (inSockets[i].getInputStream());
+                    }
+
+
+                    for (int i=0; i < num_players; i++) {
+                        if ( (packetFromServer = (MazewarPacket) in_from_clients[i].readObject()) != null) {
+                            System.out.println ("Received packet from anther client_port");
+                        }
+                    }
+
+                        //if (packetFromServer.type == MazewarPacket.MAZEWAR_REQ) {
+                        //    clientCommandQueue.put(packetFromServer);
+                            //System.out.println ("Received packet from server, added to queue");
+                        //} 
 
                 } catch(Exception e) {
                     System.exit(1);
                 } 
             }
         }
-        
+
         /**
          * Entry point for the game.  
          * @param args Command-line arguments.
          */
         public static void main(String args[]) {
 
-		if(args.length == 2 ) {
+		if(args.length == 3 ) {
 			hostname = args[0];
-			port = Integer.parseInt(args[1]);
+			port = Integer.parseInt(args[1]); //naming service port
+            myPort = Integer.parseInt(args[2]);
+            num_players = 2;
 		} else {
 			System.err.println("ERROR: Invalid arguments!");
 			System.exit(-1);
 		}
+
+
                 /* Create the GUI */
                 new Mazewar();
 

@@ -35,6 +35,7 @@ public class NamingServiceHandlerThread extends Thread {
 				boolean flag=false;
 				/* If you want to register */
 				if(packetFromClient.type == MazewarPacket.LOOKUP_REGISTER) {
+					System.out.println("Registering new Client");
 					for(int i=0;i<num_of_players;i++){
 						if("".equals(clientLookupTable[i].client_name)){ /*found empty slot*/
 							clientLookupTable[i].client_name = packetFromClient.name; /*store name into table*/
@@ -85,20 +86,23 @@ public class NamingServiceHandlerThread extends Thread {
 						}
 					}
 					toClient.writeObject(packetToClient);
+					continue;
 				}
 
 				if(packetFromClient.type == MazewarPacket.LOOKUP_QUIT) {
 
 					System.out.println("You are in quit");
 					for(int i=0;i<num_of_players;i++){
-						if(packetFromClient.name.equals(clientLookupTable[i].client_name)){ /*if none empty spot*/
+						if(clientLookupTable[i].client_name.equals(packetFromClient.name)){ /*if none empty spot*/
 							clientLookupTable[i].client_name = "";
 							clientLookupTable[i].client_location = null; /*FIXED*/
+							break;
 						}
 					}
 					packetToClient = new MazewarPacket();
 					packetToClient.type = MazewarPacket.LOOKUP_REPLY;
 					toClient.writeObject(packetToClient);
+					continue;
 				}
 				
 				/* Sending an ECHO_NULL || ECHO_BYE means quit */
