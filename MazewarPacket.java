@@ -60,6 +60,7 @@ public class MazewarPacket implements Serializable {
 	public int type = MazewarPacket.MAZEWAR_NULL;
 	public int command;
 	public String name;
+	public int client_id;
 	public String content;
 	public int pointx;
 	public int pointy;

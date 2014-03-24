@@ -45,16 +45,18 @@ public class GUIClient extends LocalClient implements KeyListener, Runnable {
          * running.
          */
         public BlockingQueue<MazewarPacket> clientCommandQueue;
+        public BlockingQueue<MazewarPacket> clientBroadcastQueue;
         private boolean active = false;
         /**
          * Create a GUI controlled {@link LocalClient}.  
          */
-        public GUIClient(String name_, ObjectOutputStream [] out_, BlockingQueue<MazewarPacket> clientCommandQueue_, int num_players_) {
+        public GUIClient(String name_, ObjectOutputStream [] out_, BlockingQueue<MazewarPacket> clientCommandQueue_, BlockingQueue<MazewarPacket> clientBroadcastQueue_, int num_players_) {
                 super(name_);
                 name = name_;
                 num_players = num_players_;
                 out = out_;
                 clientCommandQueue = clientCommandQueue_;
+                clientBroadcastQueue = clientBroadcastQueue_;
                 thread = new Thread(this);
         }
         
@@ -91,50 +93,30 @@ public class GUIClient extends LocalClient implements KeyListener, Runnable {
                 } else if(e.getKeyCode() == KeyEvent.VK_UP) {
                         packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
                         packetToOthers.command = MazewarPacket.MAZEWAR_MOVEFORWARD;
-                        try {
-                            multicastPacket (packetToOthers);
-                        } catch (IOException e2) {
-                            
-                        }
+                        clientBroadcastQueue.add (packetToOthers);
                         //forward();
                 // Down-arrow moves backward.
                 } else if(e.getKeyCode() == KeyEvent.VK_DOWN) {
                         packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
                         packetToOthers.command = MazewarPacket.MAZEWAR_MOVEBACKWARD;
-                        try {
-                            multicastPacket (packetToOthers);
-                        } catch (IOException e2) {
-                            
-                        }
+                        clientBroadcastQueue.add (packetToOthers);
                         //backup();
                 // Left-arrow turns left.
                 } else if(e.getKeyCode() == KeyEvent.VK_LEFT) {
                         packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
                         packetToOthers.command = MazewarPacket.MAZEWAR_ROTATELEFT;
-                        try {
-                            multicastPacket (packetToOthers);
-                        } catch (IOException e2) {
-                            
-                        }
+                        clientBroadcastQueue.add (packetToOthers);
                         //turnLeft();
                 // Right-arrow turns right.
                 } else if(e.getKeyCode() == KeyEvent.VK_RIGHT) {
                         packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
                         packetToOthers.command = MazewarPacket.MAZEWAR_ROTATERIGHT;
-                        try {
-                            multicastPacket (packetToOthers);
-                        } catch (IOException e2) {
-                            
-                        }
+                        clientBroadcastQueue.add (packetToOthers);
                 // Spacebar fires.
                 } else if(e.getKeyCode() == KeyEvent.VK_SPACE) {
                         packetToOthers.type = MazewarPacket.MAZEWAR_REQ;
                         packetToOthers.command = MazewarPacket.MAZEWAR_FIRE;
-                        try {
-                            multicastPacket (packetToOthers);
-                        } catch (IOException e2) {
-                            
-                        }
+                        clientBroadcastQueue.add (packetToOthers);
                         //fire();
                 }
         }

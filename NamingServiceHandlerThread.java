@@ -42,6 +42,7 @@ public class NamingServiceHandlerThread extends Thread {
 							clientLookupTable[i].client_id = i;
 							clientLookupTable[i].client_location = new ClientLocation (packetFromClient.locations[0].client_host, packetFromClient.locations[0].client_port); /*store location into table*/
 							packetToClient.type = MazewarPacket.LOOKUP_REPLY;
+							packetToClient.client_id = i;
 							toClient.writeObject(packetToClient);
 							flag=true;
 							break;

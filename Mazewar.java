@@ -57,7 +57,9 @@ public class Mazewar extends JFrame implements Runnable {
         //private static ObjectInputStream [] in_from_clients;
 
         public BlockingQueue<MazewarPacket> clientCommandQueue;
+        public BlockingQueue<MazewarPacket> clientBroadcastQueue;
         private String gui_player_name;
+        private int gui_player_id;
         private static String hostname;
         private static int port;    //port for naming service
         private static int myPort; //port for this client
@@ -204,7 +206,8 @@ public class Mazewar extends JFrame implements Runnable {
                 gui_player_name = name;
                 // You may want to put your network initialization code somewhere in
                 // here.
-                clientCommandQueue = new ArrayBlockingQueue<MazewarPacket>(1024);
+                clientCommandQueue = new ArrayBlockingQueue<MazewarPacket>(128);
+                clientBroadcastQueue = new ArrayBlockingQueue<MazewarPacket>(128);
 
                 MazewarPacket packetToServer=new MazewarPacket();
                 MazewarPacket packetFromServer;
@@ -250,6 +253,7 @@ public class Mazewar extends JFrame implements Runnable {
                         System.out.println("I have problem, shutting down");
                         Mazewar.quit();
                     }
+                    gui_player_id = packetFromServer.client_id;
 
                     //poll the naming service to see if number of players is ready
                     //poll once every second
@@ -274,7 +278,7 @@ public class Mazewar extends JFrame implements Runnable {
                             break;
                         }
                     }
-
+                    System.out.println ("i am: " + gui_player_name + " " + gui_player_id);
                     
                     //connect with other players
                     for (int i = 0; i < num_players; i++) {
@@ -370,6 +374,7 @@ public class Mazewar extends JFrame implements Runnable {
                                             packetToOthers.type = MazewarPacket.PLAYER_SETUP_FINAL;
                                             packetToOthers.pointx = pointx;
                                             packetToOthers.pointy = pointy;
+                                            packetToOthers.client_id = gui_player_id;
                                             out_to_clients[i].writeObject (packetToOthers);
                                         }  
                                     }
@@ -398,7 +403,7 @@ public class Mazewar extends JFrame implements Runnable {
                         if (packetFromOthers.type == MazewarPacket.PLAYER_SETUP_FINAL) {
                             Point point = new Point (packetFromOthers.pointx, packetFromOthers.pointy);
                             if (packetFromOthers.name.equals(gui_player_name)) {
-                                guiClient = new GUIClient(gui_player_name, out_to_clients, clientCommandQueue, num_players);
+                                guiClient = new GUIClient(gui_player_name, out_to_clients, clientCommandQueue, clientBroadcastQueue,num_players);
                                 maze.addClient_with_point(guiClient, point, 0);
                                 this.addKeyListener(guiClient);                            
                             } else {
@@ -489,13 +494,16 @@ public class Mazewar extends JFrame implements Runnable {
 
             handler_thread [] handler_threads = new handler_thread[num_players];
 
+            client_broadcast_thread broadcast_thread = new client_broadcast_thread(out_to_clients, clientBroadcastQueue, num_players, gui_player_name);
+            broadcast_thread.start();
+
             int i = 0;
             while (listening) {
                 if (i >= num_players) {
                     continue;
                 }
                 try {
-                    handler_threads[i] = new handler_thread(serverSocket.accept(), clientCommandQueue, num_players, maze, gui_player_name);
+                    handler_threads[i] = new handler_thread(serverSocket.accept(), clientCommandQueue, num_players, maze, gui_player_name, out_to_clients);
                     handler_threads[i].start();
                     i++;
                 } catch (IOException e) {
@@ -548,19 +556,22 @@ class handler_thread extends Thread {
     private String client_name;
     private Maze maze = null;
     private String gui_player_name;
+    private int client_id;
     private boolean running = true;
+    private ObjectOutputStream [] out_to_clients;
 
-    public handler_thread (Socket socket_, BlockingQueue<MazewarPacket> clientCommandQueue_, int num_players_, Maze maze_, String gui_player_name_) {
+    public handler_thread (Socket socket_, BlockingQueue<MazewarPacket> clientCommandQueue_, int num_players_, Maze maze_, String gui_player_name_, ObjectOutputStream [] out_to_clients_) {
         this.socket = socket_;
         clientCommandQueue = clientCommandQueue_;
         num_players = num_players_;
         client_name = "";
         maze = maze_;
         gui_player_name = gui_player_name_;
+        out_to_clients = out_to_clients_;
         running = true;
     }
 
-    public void end_handler_thread() {
+    public synchronized void end_handler_thread() {
         running = false;
     }
 
@@ -573,6 +584,8 @@ class handler_thread extends Thread {
                         if (( packetFromOthers = (MazewarPacket) fromClients.readObject()) != null) {
                             if (packetFromOthers.type == MazewarPacket.PLAYER_SETUP_FINAL) {
                                 client_name = packetFromOthers.name;
+                                client_id = packetFromOthers.client_id;
+                                System.out.println ("players joined: " + client_name + " " + client_id);
                             }
 
                             if (packetFromOthers.type == MazewarPacket.MAZEWAR_BYE) {
@@ -591,7 +604,7 @@ class handler_thread extends Thread {
                                 break;
                             }
 
-                            System.out.println ("i received a packet");
+                            //System.out.println ("i received a packet");
                             clientCommandQueue.put(packetFromOthers);
                         }
                     }
@@ -604,6 +617,9 @@ class handler_thread extends Thread {
                         maze.removeClient (_client);
                     }
                 }
+                synchronized (out_to_clients) {
+                    out_to_clients[client_id] = null;
+                }
                 System.out.println ("player disconnected: " + client_name);
                 //Mazewar.unregisterClient (client_name);
             } catch (ClassNotFoundException e) {
@@ -611,5 +627,56 @@ class handler_thread extends Thread {
             } catch(InterruptedException e){
                 //System.exit(-1);
             }
+    }
+}
+
+
+class client_broadcast_thread extends Thread {
+    private int num_players;
+    private BlockingQueue<MazewarPacket> clientBroadcastQueue;
+    private ObjectOutputStream [] out_to_clients;
+    private String gui_player_name;
+    private boolean running = true;
+
+    public client_broadcast_thread (ObjectOutputStream [] out_to_clients_, BlockingQueue<MazewarPacket> clientBroadcastQueue_, int num_players_, String gui_player_name_) {
+        out_to_clients = out_to_clients_;
+        clientBroadcastQueue = clientBroadcastQueue_;
+        num_players = num_players_;
+        gui_player_name = gui_player_name_;
+        running = true;
+    }
+
+    public synchronized void end_broadcast_thread() {
+        running = false;
+    }
+
+    public void multicastPacket (MazewarPacket packetToOthers) throws IOException {
+        int i = 0;
+        try {
+            for (i=0; i<num_players; i++) {
+                synchronized (out_to_clients) {
+                    if (out_to_clients[i] != null)
+                    out_to_clients[i].writeObject(packetToOthers);                
+                }
+            }                        
+        } catch (IOException e) {
+                            
+        }
+    }
+
+    public void run () {
+            int i = 0;
+            try {
+                while (running) {
+                    MazewarPacket headQueuePacket;
+                    headQueuePacket = clientBroadcastQueue.poll();
+                    if (headQueuePacket != null) {
+                        multicastPacket (headQueuePacket);                       
+                    }
+
+                }
+            } catch (IOException e) {
+                System.out.println ("send problem here");
+            } 
     }
 }
