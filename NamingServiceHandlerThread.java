@@ -68,7 +68,7 @@ public class NamingServiceHandlerThread extends Thread {
 				/* If you want to request lookup */
 				if(packetFromClient.type == MazewarPacket.LOOKUP_REQUEST) {
 
-					System.out.println("You are in request");
+					//System.out.println("You are in request");
 					int j = 0;
 					for(int i=0;i<num_of_players;i++){
 						if(("".equals(clientLookupTable[i].client_name)) == false){ /*if none empty spot*/

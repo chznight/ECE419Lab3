@@ -45,28 +45,31 @@ import java.util.Random;
 public class Mazewar extends JFrame implements Runnable {
 
 
-        private static Socket mazewarSocket = null;
-        private static Socket lookupSocket = null;
-        public static Socket [] outSockets;
+        private Socket mazewarSocket = null;
+        private Socket lookupSocket = null;
+        public Socket [] outSockets;
         //public Socket [] inSockets;
-        public static ServerSocket serverSocket = null;
+        public ServerSocket serverSocket = null;
 
-        private static ObjectOutputStream out;
-        private static ObjectInputStream in;
-        private static ObjectOutputStream [] out_to_clients;
+        private ObjectOutputStream out;
+        private ObjectInputStream in;
+        private ObjectOutputStream [] out_to_clients;
         //private static ObjectInputStream [] in_from_clients;
 
         public BlockingQueue<MazewarPacket> clientCommandQueue;
         public BlockingQueue<MazewarPacket> clientBroadcastQueue;
+        public BlockingQueue<MazewarPacket> tokenQueue;
+        public BlockingQueue<MazewarPacket> clientCommandQueueOutOfOrder;
+
         private String gui_player_name;
-        private int gui_player_id;
+        public  int gui_player_id;
         private static String hostname;
         private static int port;    //port for naming service
         private static int myPort; //port for this client
         private static int num_players;
+        private LamportClock lamport_clock;
 
-
-        private static Thread receive_thread;
+        private Thread receive_thread;
         //private boolean receive_thread_run = false;
 
         /**
@@ -159,10 +162,17 @@ public class Mazewar extends JFrame implements Runnable {
             // } catch (InterruptedException e) {
             //     e.printStackTrace();
             // }
+            try {
+                 Thread.sleep(500);
+            } catch(InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+
             System.exit(0);
         }
 
-        public static synchronized void unregisterClient(String name) {
+
+        public synchronized void unregisterClient(String name) {
             try {
                 lookupSocket = new Socket(hostname, port);
                 out = new ObjectOutputStream(lookupSocket.getOutputStream());
@@ -208,6 +218,8 @@ public class Mazewar extends JFrame implements Runnable {
                 // here.
                 clientCommandQueue = new ArrayBlockingQueue<MazewarPacket>(128);
                 clientBroadcastQueue = new ArrayBlockingQueue<MazewarPacket>(128);
+                clientCommandQueueOutOfOrder = new ArrayBlockingQueue<MazewarPacket>(128);
+                tokenQueue = new ArrayBlockingQueue<MazewarPacket>(1);
 
                 MazewarPacket packetToServer=new MazewarPacket();
                 MazewarPacket packetFromServer;
@@ -226,6 +238,8 @@ public class Mazewar extends JFrame implements Runnable {
                 //in_from_clients = new ObjectInputStream[num_players];
 
                 //start listening for connections from other clients
+                lamport_clock = new LamportClock (0,0);
+
                 receive_thread = new Thread(this);
                 receive_thread.start();
 
@@ -272,14 +286,15 @@ public class Mazewar extends JFrame implements Runnable {
                                  Thread.sleep(1000);
                             } catch(InterruptedException ex) {
                                 Thread.currentThread().interrupt();
-                            }
+                            }                        
                         } else {
                             System.out.println("number of players reached");
                             break;
                         }
                     }
                     System.out.println ("i am: " + gui_player_name + " " + gui_player_id);
-                    
+                    lamport_clock.set_clientid(gui_player_id);
+
                     //connect with other players
                     for (int i = 0; i < num_players; i++) {
                         outSockets[i] = new Socket (packetFromServer.locations[i].client_host, packetFromServer.locations[i].client_port);
@@ -414,6 +429,13 @@ public class Mazewar extends JFrame implements Runnable {
                         }
                     }
 
+                    if (gui_player_id == 0) {
+                        System.out.println ("I have lowest id, i am generating token: " + gui_player_name);
+                        MazewarPacket token = new MazewarPacket();
+                        token.type = MazewarPacket.I_AM_THE_TOKEN;
+                        token.lamport_clock = 0;
+                        tokenQueue.add(token);
+                    }
 
         		} catch (UnknownHostException e) {
         			System.err.println("ERROR: Don't know where to connect!!");
@@ -494,8 +516,11 @@ public class Mazewar extends JFrame implements Runnable {
 
             handler_thread [] handler_threads = new handler_thread[num_players];
 
-            client_broadcast_thread broadcast_thread = new client_broadcast_thread(out_to_clients, clientBroadcastQueue, num_players, gui_player_name);
+            client_broadcast_thread broadcast_thread = new client_broadcast_thread(out_to_clients, clientBroadcastQueue, tokenQueue, num_players, gui_player_name, lamport_clock);
             broadcast_thread.start();
+
+            out_of_order_queue_process order_process = new out_of_order_queue_process(clientCommandQueue, clientCommandQueueOutOfOrder, lamport_clock);
+            order_process.start();
 
             int i = 0;
             while (listening) {
@@ -503,7 +528,8 @@ public class Mazewar extends JFrame implements Runnable {
                     continue;
                 }
                 try {
-                    handler_threads[i] = new handler_thread(serverSocket.accept(), clientCommandQueue, num_players, maze, gui_player_name, out_to_clients);
+                    handler_threads[i] = new handler_thread(serverSocket.accept(), clientCommandQueue, clientCommandQueueOutOfOrder, tokenQueue, 
+                        num_players, maze, gui_player_name, out_to_clients, lamport_clock);
                     handler_threads[i].start();
                     i++;
                 } catch (IOException e) {
@@ -552,6 +578,8 @@ public class Mazewar extends JFrame implements Runnable {
 class handler_thread extends Thread {
     private int num_players;
     private BlockingQueue<MazewarPacket> clientCommandQueue;
+    private BlockingQueue<MazewarPacket> clientCommandQueueOutOfOrder;
+    private BlockingQueue<MazewarPacket> tokenQueue;
     private Socket socket = null;
     private String client_name;
     private Maze maze = null;
@@ -559,10 +587,23 @@ class handler_thread extends Thread {
     private int client_id;
     private boolean running = true;
     private ObjectOutputStream [] out_to_clients;
+    private LamportClock lamport_clock;
 
-    public handler_thread (Socket socket_, BlockingQueue<MazewarPacket> clientCommandQueue_, int num_players_, Maze maze_, String gui_player_name_, ObjectOutputStream [] out_to_clients_) {
+    public handler_thread (Socket socket_, 
+        BlockingQueue<MazewarPacket> clientCommandQueue_, 
+        BlockingQueue<MazewarPacket> clientCommandQueueOutOfOrder_, 
+        BlockingQueue<MazewarPacket> tokenQueue_, 
+        int num_players_, 
+        Maze maze_, 
+        String gui_player_name_, 
+        ObjectOutputStream [] out_to_clients_, 
+        LamportClock lamport_clock_) {
+
         this.socket = socket_;
         clientCommandQueue = clientCommandQueue_;
+        clientCommandQueueOutOfOrder = clientCommandQueueOutOfOrder_; 
+        lamport_clock = lamport_clock_;
+        tokenQueue = tokenQueue_;
         num_players = num_players_;
         client_name = "";
         maze = maze_;
@@ -603,9 +644,25 @@ class handler_thread extends Thread {
                                 System.out.println ("player disconnected: " + client_name);
                                 break;
                             }
+                            if (packetFromOthers.type == MazewarPacket.I_AM_THE_TOKEN) {
+                                tokenQueue.add(packetFromOthers);
+                                continue;
+                            }
 
-                            //System.out.println ("i received a packet");
+                            if (packetFromOthers.type == MazewarPacket.MAZEWAR_REQ) {
+                                System.out.println ("I received a packet with clock: " + packetFromOthers.lamport_clock + " from: " + client_name);
+                                if ((lamport_clock.get_lamport_clock()) == (packetFromOthers.lamport_clock - 1)) {
+                                    clientCommandQueue.put(packetFromOthers);
+                                    lamport_clock.incr_and_return_LamportClock();
+                                } else {
+                                    clientCommandQueueOutOfOrder.add(packetFromOthers); //add packet to a different queue to be process by another thread
+                                }
+                                continue;
+                            }
+
+                            System.out.println ("Received initialization packet");
                             clientCommandQueue.put(packetFromOthers);
+
                         }
                     }
                     fromClients.close();
@@ -634,15 +691,19 @@ class handler_thread extends Thread {
 class client_broadcast_thread extends Thread {
     private int num_players;
     private BlockingQueue<MazewarPacket> clientBroadcastQueue;
+    private BlockingQueue<MazewarPacket> tokenQueue;
     private ObjectOutputStream [] out_to_clients;
     private String gui_player_name;
     private boolean running = true;
+    private LamportClock lamport_clock;
 
-    public client_broadcast_thread (ObjectOutputStream [] out_to_clients_, BlockingQueue<MazewarPacket> clientBroadcastQueue_, int num_players_, String gui_player_name_) {
+    public client_broadcast_thread (ObjectOutputStream [] out_to_clients_, BlockingQueue<MazewarPacket> clientBroadcastQueue_, BlockingQueue<MazewarPacket> tokenQueue_, int num_players_, String gui_player_name_, LamportClock lamport_clock_) {
         out_to_clients = out_to_clients_;
         clientBroadcastQueue = clientBroadcastQueue_;
+        tokenQueue = tokenQueue_;
         num_players = num_players_;
         gui_player_name = gui_player_name_;
+        lamport_clock = lamport_clock_;
         running = true;
     }
 
@@ -665,18 +726,77 @@ class client_broadcast_thread extends Thread {
     }
 
     public void run () {
-            int i = 0;
             try {
                 while (running) {
-                    MazewarPacket headQueuePacket;
-                    headQueuePacket = clientBroadcastQueue.poll();
-                    if (headQueuePacket != null) {
-                        multicastPacket (headQueuePacket);                       
+                    MazewarPacket token = tokenQueue.poll();
+                    if (token != null) {
+                        MazewarPacket headQueuePacket;
+                        headQueuePacket = clientBroadcastQueue.poll();
+                        if (headQueuePacket != null) {
+                            token.lamport_clock = token.lamport_clock + 1;
+                            headQueuePacket.lamport_clock = token.lamport_clock;
+                            multicastPacket (headQueuePacket);                            
+                        }
+                        out_to_clients[((lamport_clock.get_clientid())+1)%num_players].writeObject(token);
                     }
-
                 }
             } catch (IOException e) {
                 System.out.println ("send problem here");
             } 
+    }
+}
+
+class out_of_order_queue_process extends Thread {
+    private boolean running = true;
+    private LamportClock lamport_clock;
+    private BlockingQueue<MazewarPacket> clientCommandQueue;
+    private BlockingQueue<MazewarPacket> clientCommandQueueOutOfOrder;
+
+    public out_of_order_queue_process (BlockingQueue<MazewarPacket> clientCommandQueue_, BlockingQueue<MazewarPacket> clientCommandQueueOutOfOrder_, LamportClock lamport_clock_) {
+        lamport_clock = lamport_clock_;
+        running = true;
+        clientCommandQueue = clientCommandQueue_;
+        clientCommandQueueOutOfOrder = clientCommandQueueOutOfOrder_; 
+    }
+
+    public void run () {
+        while (running) {
+            MazewarPacket nextPacket = clientCommandQueueOutOfOrder.poll();
+            if (nextPacket != null) { //test if there is anything in the queue
+                if ((lamport_clock.get_lamport_clock()) == (nextPacket.lamport_clock - 1)) { //if there is, check if its clock is 1 bigger than our own
+                    clientCommandQueue.add(nextPacket); //if its good, then we put it on the primary queue
+                    lamport_clock.incr_and_return_LamportClock();
+                } else {
+                    clientCommandQueueOutOfOrder.add(nextPacket); //if its bad we add it back in, this would cycle the packets
+                }
+            }
+        }
+    }
+}
+
+class LamportClock {
+    private int lamport_clock;
+    private int client_id;
+
+    public LamportClock (int lamport_clock_, int client_id_) {
+        lamport_clock = lamport_clock_;
+        client_id = client_id_;
+    }
+
+    public synchronized int incr_and_return_LamportClock() {
+        lamport_clock++;
+        return lamport_clock;
+    }
+
+    public synchronized int get_lamport_clock() {
+        return lamport_clock;
+    }
+
+    public synchronized int get_clientid () {
+        return client_id;
+    }
+
+    public synchronized void set_clientid (int new_id) {
+        client_id = new_id;
     }
 }

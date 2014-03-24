@@ -82,11 +82,7 @@ public class GUIClient extends LocalClient implements KeyListener, Runnable {
                 // If the user pressed Q, invoke the cleanup code and quit. 
                 if((e.getKeyChar() == 'q') || (e.getKeyChar() == 'Q')) {
                         packetToOthers.type = MazewarPacket.MAZEWAR_BYE;
-                        //try {
-                        // //   multicastPacket (packetToOthers);
-                        //} catch (IOException e2) {
-                            
-                        //}
+                        clientBroadcastQueue.add (packetToOthers);
                         //Mazewar.unregisterClient (name);
                         Mazewar.quit();
                 // Up-arrow moves forward.

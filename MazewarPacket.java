@@ -55,6 +55,8 @@ public class MazewarPacket implements Serializable {
 	public static final int LOOKUP_ACK    = 304;
 	public static final int LOOKUP_UNREGISTER = 305;
 
+	//token
+	public static final int I_AM_THE_TOKEN = 600;
 
 	
 	public int type = MazewarPacket.MAZEWAR_NULL;
@@ -67,6 +69,7 @@ public class MazewarPacket implements Serializable {
 	public int direction;
 	public int error_code;
 	public int num_locations;
+	public int lamport_clock;
 	public ClientLocation locations[];
 
 }
