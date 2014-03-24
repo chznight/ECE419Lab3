@@ -28,17 +28,16 @@ public class NamingServiceHandlerThread extends Thread {
 			MazewarPacket packetFromClient;
 			
 			while (( packetFromClient = (MazewarPacket) fromClient.readObject()) != null) {
-				//System.out.println("I got "+packetFromClient.type+" from client");
-				/* create a packet to send reply back to client */
 				MazewarPacket packetToClient = new MazewarPacket();
-				/* process request */
-				boolean flag=false;
-				/* If you want to register */
+				//boolean flag=false;
+				
+				/*If name already exists, shouldn't we prompt that client to enter new name?*/
 				if(packetFromClient.type == MazewarPacket.LOOKUP_REGISTER) {
-					System.out.println("Registering new Client");
+					System.out.println("Received REGISTER");
+					boolean flag=false;
 					for(int i=0;i<num_of_players;i++){
 						if("".equals(clientLookupTable[i].client_name)){ /*found empty slot*/
-							clientLookupTable[i].client_name = packetFromClient.name; /*store name into table*/
+							clientLookupTable[i].client_name = packetFromClient.name; 
 							clientLookupTable[i].client_id = i;
 							clientLookupTable[i].client_location = new ClientLocation (packetFromClient.locations[0].client_host, packetFromClient.locations[0].client_port); /*store location into table*/
 							packetToClient.type = MazewarPacket.LOOKUP_REPLY;
@@ -49,7 +48,7 @@ public class NamingServiceHandlerThread extends Thread {
 						}
 						if(clientLookupTable[i].client_name==packetFromClient.name){/*name already exists, register using new location*/ 
 							clientLookupTable[i].client_location = new ClientLocation (packetFromClient.locations[0].client_host, packetFromClient.locations[0].client_port);
-							clientLookupTable[i].client_id = i; /*FIXED*/
+							clientLookupTable[i].client_id = i;
 							packetToClient.type = MazewarPacket.LOOKUP_REPLY;
 							toClient.writeObject(packetToClient);
 							flag=true;
@@ -65,49 +64,44 @@ public class NamingServiceHandlerThread extends Thread {
 					}
 				}
 				
-				/* If you want to request lookup */
 				if(packetFromClient.type == MazewarPacket.LOOKUP_REQUEST) {
-
-					//System.out.println("You are in request");
+					System.out.println("Received REQUEST");
 					int j = 0;
 					for(int i=0;i<num_of_players;i++){
-						if(("".equals(clientLookupTable[i].client_name)) == false){ /*if none empty spot*/
-							j++;
-						}
+						if("".equals(clientLookupTable[i].client_name)) /*reaches empty spot*/
+							break;
+						j++;
 					}
 					packetToClient = new MazewarPacket();
 					packetToClient.locations = new ClientLocation[j];
 					packetToClient.num_locations = j;
 					packetToClient.type = MazewarPacket.LOOKUP_REPLY;
-					j = 0;
+					j = 0; //Reset j
 					for(int i=0;i<num_of_players;i++){
-						if(("".equals(clientLookupTable[i].client_name)) == false){ 
-							packetToClient.locations[j] = clientLookupTable[i].client_location; /*tell client the location*/
-							j++;
-						}
+						if("".equals(clientLookupTable[i].client_name))
+							break;
+						packetToClient.locations[j++] = clientLookupTable[i].client_location; /*fill in locations*/
 					}
 					toClient.writeObject(packetToClient);
 					continue;
 				}
 
+				/*What is this for again?*/
 				if(packetFromClient.type == MazewarPacket.LOOKUP_UNREGISTER) {
-					//unregister
+					System.out.println("Received UNREGISTER");
 					System.out.println("Unregistering client " + packetFromClient.name);
 					for(int i=0;i<num_of_players;i++){
 						if(clientLookupTable[i].client_name.equals(packetFromClient.name)){ 
-							clientLookupTable[i].client_name = ""; //change to empty string
-							clientLookupTable[i].client_location = null; /*FIXED*/
+							clientLookupTable[i].client_name = ""; 
+							clientLookupTable[i].client_location = null;
 							break;
 						}
 					}
 					break;
 				}
 				
-				/* Sending an ECHO_NULL || ECHO_BYE means quit */
 				if (packetFromClient.type == MazewarPacket.MAZEWAR_BYE || packetFromClient.type == MazewarPacket.MAZEWAR_NULL) {
-					//packetToClient.type = MazewarPacket.BROKER_NULL;
-					//toClient.writeObject(packetToClient);
-					//System.out.println ("Naming server thread exiting");
+					System.out.println("Received BYE/NULL");
 					gotByePacket = true;
 					break;
 				}
