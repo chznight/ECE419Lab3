@@ -18,8 +18,9 @@ public class NamingService {
     public static void main(String[] args) throws IOException {
 
         ServerSocket serverSocket = null;
-        boolean listening = true;
+        //boolean listening = true;
         int num_of_players = 2;
+	int num_of_players_connected=0;
 
         try {
             if(args.length == 2) {
@@ -43,8 +44,10 @@ public class NamingService {
             clientLookupTable[i] = new LookupTable();
         }
 
-        while (listening) {
+        //while (listening) {
+        while(num_of_players_connected<num_of_players){
         	new NamingServiceHandlerThread(serverSocket.accept(), clientLookupTable, num_of_players).start();
+        	num_of_players_connected++;
         }
 
         serverSocket.close();
