@@ -1,19 +1,17 @@
 Team members:
 
-Chen Hao Zhang
-999272228
+1) Chen Hao Zhang, 999272228
+2) Shiuh Sen Ang, 999295089
 
-Shiuh Sen Ang
-999295089
+Intructions to start the naming service:
 
-Intructions to start the server:
-1) ./server.sh <port> <number_of_players>
+$ ./naming_service.sh <port> <number_of_players>
 
-The server will wait until number_of_players connect to start the game.
-The server will exit when all of the players are disconnected.
+* Naming service will wait until number_of_players players connected to start the game.
 
 Intructions to start client:
-1) ./run.sh <hostname> <port>
 
-Two clients can not have the same name, if a client enters a name that already exists,
+$ ./run.sh <naming_service_ip> <naming_service_port> <port> <number_of_player>
+
+* Clients cannot have the same name, if a client enters a name that already exists, 
 he/she will be prompted to enter another name.
