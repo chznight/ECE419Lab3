@@ -527,8 +527,7 @@ public class Mazewar extends JFrame implements Runnable {
                     continue;
                 }
                 try {
-                    handler_threads[i] = new handler_thread(serverSocket.accept(), clientCommandQueue, clientCommandQueueOutOfOrder, tokenQueue, 
-                        num_players, maze, gui_player_name, out_to_clients, lamport_clock);
+                    handler_threads[i] = new handler_thread(serverSocket.accept(), clientCommandQueue, clientCommandQueueOutOfOrder, tokenQueue, num_players, maze, gui_player_name, out_to_clients, lamport_clock);
                     handler_threads[i].start();
                     i++;
                 } catch (IOException e) {
@@ -548,10 +547,14 @@ public class Mazewar extends JFrame implements Runnable {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            
+
+	    System.out.println ("ended all handler threads");
+
             order_process.out_of_order_stop();
             broadcast_thread.end_broadcast_thread();
             
+	    System.out.println ("ended broadcast threads");
+
             try {
 		        order_process.join();
 		        broadcast_thread.join();
@@ -639,12 +642,12 @@ class handler_thread extends Thread {
 
                             if (packetFromOthers.type == MazewarPacket.MAZEWAR_BYE) {
                             	System.out.println ("recieved bye packet");
-                                if (packetFromOthers.name.equals(client_name)) {
+                                /*if (packetFromOthers.name.equals(client_name)) {
                               		synchronized (out_to_clients) {
 										out_to_clients[client_id] = null;
 									}
 									break;
-                                }
+                                }*/
 
                                 Iterator<Client> itr = maze.getClients();
                                 while (itr.hasNext()) {
@@ -657,7 +660,6 @@ class handler_thread extends Thread {
 									out_to_clients[client_id] = null;
 								}
                                 System.out.println ("player disconnected: " + client_name);
-                                break;
                             }
                             
                             if (packetFromOthers.type == MazewarPacket.I_AM_THE_TOKEN) {
@@ -695,6 +697,7 @@ class handler_thread extends Thread {
                 synchronized (out_to_clients) {
                     out_to_clients[client_id] = null;
                 }
+		running = false;
                 System.out.println ("player disconnected: " + client_name);
                 //Mazewar.unregisterClient (client_name);
             } catch (ClassNotFoundException e) {
@@ -745,18 +748,18 @@ class client_broadcast_thread extends Thread {
 
     public void run () {
             try {
+		MazewarPacket headQueuePacket=null;
                 while (running) {
                     MazewarPacket token = tokenQueue.poll();
                     if (token != null) {
-                        MazewarPacket headQueuePacket;
                         headQueuePacket = clientBroadcastQueue.poll();
                         if (headQueuePacket != null) {
                             token.lamport_clock = token.lamport_clock + 1;
                             headQueuePacket.lamport_clock = token.lamport_clock;
-                            multicastPacket (headQueuePacket);                            
+                            multicastPacket (headQueuePacket);     
                         }
+			int i = ((lamport_clock.get_clientid())+1)%num_players;
                         while (true) {
-                        	int i = ((lamport_clock.get_clientid())+1)%num_players;
                         	if (out_to_clients[i] != null) {
                         		out_to_clients[i].writeObject(token);
                         		break;
@@ -767,7 +770,7 @@ class client_broadcast_thread extends Thread {
 
                     }
                 }
-                
+
                MazewarPacket token = tokenQueue.poll();
                 if (token != null) {
                     while (true) {
