@@ -68,6 +68,7 @@ public class Mazewar extends JFrame implements Runnable {
         private static int myPort; //port for this client
         private static int num_players;
         private LamportClock lamport_clock;
+        private static boolean listening = true;
 
         private Thread receive_thread;
         //private boolean receive_thread_run = false;
@@ -157,16 +158,14 @@ public class Mazewar extends JFrame implements Runnable {
             // } catch (IOException e) {
             //     //System.exit(0);
             // }
-            // try {
-            //     receive_thread.join();
-            // } catch (InterruptedException e) {
-            //     e.printStackTrace();
-            // }
+
+            listening = false;
             try {
-                 Thread.sleep(500);
-            } catch(InterruptedException ex) {
-                Thread.currentThread().interrupt();
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
+            
 
             System.exit(0);
         }
@@ -512,7 +511,7 @@ public class Mazewar extends JFrame implements Runnable {
 
         public void run() {
 
-            boolean listening = true;
+            //boolean listening = true;
 
             handler_thread [] handler_threads = new handler_thread[num_players];
 
@@ -541,15 +540,24 @@ public class Mazewar extends JFrame implements Runnable {
 
             System.out.println ("stopped listening");
 
-            // try {
-            //     for (i = 0; i < num_players; i++) {
-            //         handler_threads[i].end_handler_thread();
-            //         handler_threads[i].join();
-            //     }
-            // } catch (InterruptedException e) {
-            //     e.printStackTrace();
-            // }
-
+            try {
+                for (i = 0; i < num_players; i++) {
+                    handler_threads[i].end_handler_thread();
+                    handler_threads[i].join();
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            
+            order_process.out_of_order_stop();
+            broadcast_thread.end_broadcast_thread();
+            
+            try {
+		        order_process.join();
+		        broadcast_thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
 
         /**
@@ -620,7 +628,7 @@ class handler_thread extends Thread {
             try {
                     ObjectInputStream fromClients = new ObjectInputStream(socket.getInputStream());
                     MazewarPacket packetFromOthers;
-
+					int tokencounter = 0;
                     while (running) {
                         if (( packetFromOthers = (MazewarPacket) fromClients.readObject()) != null) {
                             if (packetFromOthers.type == MazewarPacket.PLAYER_SETUP_FINAL) {
@@ -630,8 +638,12 @@ class handler_thread extends Thread {
                             }
 
                             if (packetFromOthers.type == MazewarPacket.MAZEWAR_BYE) {
+                            	System.out.println ("recieved bye packet");
                                 if (packetFromOthers.name.equals(client_name)) {
-                                    break;
+                              		synchronized (out_to_clients) {
+										out_to_clients[client_id] = null;
+									}
+									break;
                                 }
 
                                 Iterator<Client> itr = maze.getClients();
@@ -641,10 +653,15 @@ class handler_thread extends Thread {
                                         maze.removeClient (_client);
                                     }
                                 }
+                              	synchronized (out_to_clients) {
+									out_to_clients[client_id] = null;
+								}
                                 System.out.println ("player disconnected: " + client_name);
                                 break;
                             }
+                            
                             if (packetFromOthers.type == MazewarPacket.I_AM_THE_TOKEN) {
+                            	System.out.println ("revieved token: " + tokencounter++);
                                 tokenQueue.add(packetFromOthers);
                                 continue;
                             }
@@ -665,6 +682,7 @@ class handler_thread extends Thread {
 
                         }
                     }
+                    System.out.println ("recieving thread closing");
                     fromClients.close();
             } catch (IOException e) {
                 Iterator<Client> itr = maze.getClients();
@@ -721,7 +739,7 @@ class client_broadcast_thread extends Thread {
                 }
             }                        
         } catch (IOException e) {
-                            
+            System.out.println ("broadcast IOexception");                
         }
     }
 
@@ -737,12 +755,39 @@ class client_broadcast_thread extends Thread {
                             headQueuePacket.lamport_clock = token.lamport_clock;
                             multicastPacket (headQueuePacket);                            
                         }
-                        out_to_clients[((lamport_clock.get_clientid())+1)%num_players].writeObject(token);
+                        while (true) {
+                        	int i = ((lamport_clock.get_clientid())+1)%num_players;
+                        	if (out_to_clients[i] != null) {
+                        		out_to_clients[i].writeObject(token);
+                        		break;
+                        	} else {
+                        		i = (i+1)%num_players;
+                        	}
+                        }
+
                     }
                 }
+                
+                MazewarPacket token = tokenQueue.poll();
+                if (token != null) {
+                    while (true) {
+                        int i = ((lamport_clock.get_clientid())+1)%num_players;
+                        if (out_to_clients[i] != null) {
+                        	out_to_clients[i].writeObject(token);
+                        	break;
+                        } else {
+                        	i = (i+1)%num_players;
+                        	if (i == lamport_clock.get_clientid()) {
+                        		break;
+                        	}
+                        }
+                    }
+                }
+                System.out.println ("broadcast thread closing");
             } catch (IOException e) {
                 System.out.println ("send problem here");
             } 
+            
     }
 }
 
@@ -757,6 +802,10 @@ class out_of_order_queue_process extends Thread {
         running = true;
         clientCommandQueue = clientCommandQueue_;
         clientCommandQueueOutOfOrder = clientCommandQueueOutOfOrder_; 
+    }
+    
+    public synchronized void out_of_order_stop () {
+    	running = false;
     }
 
     public void run () {
