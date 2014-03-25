@@ -768,7 +768,7 @@ class client_broadcast_thread extends Thread {
                     }
                 }
                 
-                MazewarPacket token = tokenQueue.poll();
+               MazewarPacket token = tokenQueue.poll();
                 if (token != null) {
                     while (true) {
                         int i = ((lamport_clock.get_clientid())+1)%num_players;
@@ -783,6 +783,7 @@ class client_broadcast_thread extends Thread {
                         }
                     }
                 }
+
                 System.out.println ("broadcast thread closing");
             } catch (IOException e) {
                 System.out.println ("send problem here");
